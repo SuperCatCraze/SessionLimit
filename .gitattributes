@@ -1,0 +1,10 @@
+# Normalise line endings so checkouts are consistent across machines.
+* text=auto eol=lf
+
+*.sln      text eol=crlf
+*.csproj   text eol=crlf
+*.xaml     text eol=crlf
+*.cs       text eol=crlf
+
+*.png binary
+*.ico binary
