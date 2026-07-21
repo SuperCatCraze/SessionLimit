@@ -23,6 +23,14 @@ public partial class App : Application
             args.SetObserved();
         };
 
+        // Relaunched by the updater: the build we replaced is still winding down, and two
+        // instances tailing the transcripts would both append to the same ledger.
+        if (e.Args.Contains(Updater.UpdatedFlag))
+        {
+            Log.Info($"restarted after update, now {Updater.Display}");
+            Updater.WaitForPreviousExit(TimeSpan.FromSeconds(10));
+        }
+
         var win = new OverlayWindow();
         MainWindow = win;
         win.Show();

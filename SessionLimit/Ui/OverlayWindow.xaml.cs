@@ -29,6 +29,11 @@ public partial class OverlayWindow : Window
     private UsageCommandCollector? _usageCmd;
     private AdminApiCollector? _adminApi;
 
+    private UpdateInfo? _update;
+    private bool _updateBusy;
+    // Not at t=0: the first seconds belong to the backfill, not to a network round-trip.
+    private DateTimeOffset _nextUpdateCheck = DateTimeOffset.Now.AddSeconds(20);
+
     public OverlayWindow()
     {
         InitializeComponent();
@@ -51,11 +56,15 @@ public partial class OverlayWindow : Window
         {
             Render();
             _store.SaveState();      // self-throttled to every 30 s
+            MaybeAutoCheckUpdate();
         };
         _tick.Start();
 
         // If the app was moved or reinstalled, repoint the launch-on-login entry.
         StartupManager.RefreshIfStale();
+
+        VersionText.Text = Updater.Display;
+        Updater.CleanupPrevious();   // clear the build we replaced, and any part-download
 
         StartCollectors();
         Render();
@@ -458,6 +467,8 @@ public partial class OverlayWindow : Window
         // Read the live registry state rather than a cached setting, so the box always
         // reflects what Windows will actually do.
         CbStartup.IsChecked     = StartupManager.IsEnabled();
+        CbAutoUpdate.IsChecked  = _cfg.AutoCheckUpdates;
+        RefreshUpdateHint();
 
         CbCompact.IsChecked     = _cfg.Compact;
         CbShowWeekly.IsChecked    = _cfg.ShowWeekly;
@@ -495,6 +506,7 @@ public partial class OverlayWindow : Window
         _cfg.NotificationSound    = CbSound.IsChecked == true;
         _cfg.AlwaysOnTop          = CbTop.IsChecked == true;
         StartupManager.Set(CbStartup.IsChecked == true);
+        _cfg.AutoCheckUpdates     = CbAutoUpdate.IsChecked == true;
 
         _cfg.Compact           = CbCompact.IsChecked == true;
         _cfg.ShowWeekly        = CbShowWeekly.IsChecked == true;
@@ -556,6 +568,123 @@ public partial class OverlayWindow : Window
     {
         try { Process.Start(new ProcessStartInfo(Log.Path) { UseShellExecute = true }); }
         catch (Exception ex) { Log.Error("open log failed", ex); }
+    }
+
+    // ==================================================================
+    //  updates
+    // ==================================================================
+    private void MaybeAutoCheckUpdate()
+    {
+        if (!_cfg.AutoCheckUpdates || _updateBusy) return;
+        if (_update != null) return;                       // already found one; nothing to re-poll for
+        if (DateTimeOffset.Now < _nextUpdateCheck) return;
+
+        _nextUpdateCheck = DateTimeOffset.Now.AddHours(Math.Max(1, _cfg.UpdateCheckIntervalHours));
+        _ = CheckForUpdateAsync(announce: false);
+    }
+
+    /// <param name="announce">Report "up to date" / failures. Background polls stay silent.</param>
+    private async Task CheckForUpdateAsync(bool announce)
+    {
+        if (_updateBusy) return;
+        _updateBusy = true;
+        if (announce) SetUpdateStatus("checking…", "FgDim");
+
+        try
+        {
+            var result = await Updater.CheckAsync();
+            _cfg.LastUpdateCheck = DateTimeOffset.Now;
+            _cfg.Save();
+
+            if (result is { Available: true, Info: { } info })
+            {
+                _update = info;
+                BtnUpdate.Content = $"Update to {info.Display}";
+                BtnUpdate.Visibility = Visibility.Visible;
+                SetUpdateStatus($"{info.Display} available", "Accent");
+                Log.Info($"update {info.Tag} offered");
+            }
+            else if (announce)
+            {
+                SetUpdateStatus(result.Status, "FgDim");
+            }
+
+            if (ConfigPanel.Visibility == Visibility.Visible) RefreshUpdateHint();
+        }
+        finally { _updateBusy = false; }
+    }
+
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+    {
+        _nextUpdateCheck = DateTimeOffset.Now.AddHours(Math.Max(1, _cfg.UpdateCheckIntervalHours));
+        await CheckForUpdateAsync(announce: true);
+    }
+
+    private async void Update_Click(object sender, RoutedEventArgs e)
+    {
+        if (_update is not { } info || _updateBusy) return;
+
+        if (!Updater.CanSelfUpdate(out var why))
+        {
+            SetUpdateStatus(why, "Warn");
+            return;
+        }
+
+        _updateBusy = true;
+        BtnUpdate.IsEnabled = false;
+        try
+        {
+            var progress = new Progress<double>(p => SetUpdateStatus($"downloading {p:0}%", "FgDim"));
+            var staged = await Updater.DownloadAsync(info, progress);
+
+            SetUpdateStatus("restarting…", "Accent");
+
+            // Hand over cleanly: the successor inherits this position and ledger.
+            _cfg.Left = Left;
+            _cfg.Top = Top;
+            _cfg.Save();
+            _tick.Stop();
+            StopCollectors();
+            _store.SaveState(force: true);
+
+            Updater.ApplyAndRestart(staged);
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("update failed", ex);
+            SetUpdateStatus("update failed — see log", "Danger");
+            // The swap rolls itself back on failure, so this build is still intact: resume.
+            _tick.Start();
+            StartCollectors();
+        }
+        finally
+        {
+            _updateBusy = false;
+            BtnUpdate.IsEnabled = true;
+        }
+    }
+
+    private void SetUpdateStatus(string text, string brushKey)
+    {
+        UpdateStatus.Text = text;
+        UpdateStatus.Foreground = Brush(brushKey);
+    }
+
+    private void RefreshUpdateHint()
+    {
+        var last = _cfg.LastUpdateCheck is { } t
+            ? $"last checked {t.LocalDateTime:d MMM HH:mm}"
+            : "not checked yet";
+        UpdateHint.Text = _update is { } u
+            ? $"{u.Display} is available — {Updater.RepoUrl}/releases"
+            : $"{Updater.Display} · {last} · {Updater.RepoUrl}";
+    }
+
+    private void Watermark_Click(object sender, MouseButtonEventArgs e)
+    {
+        try { Process.Start(new ProcessStartInfo("https://github.com/SuperCatCraze") { UseShellExecute = true }); }
+        catch (Exception ex) { Log.Error("open profile failed", ex); }
     }
 
     // ==================================================================

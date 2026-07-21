@@ -162,6 +162,29 @@ Everything is per-user — no administrator rights at any point. Launch-on-login
 `HKCU` Run key, so it appears in Task Manager's Startup tab and can be disabled there,
 from the app's own **Start with Windows** setting, or with `install.ps1 -Uninstall`.
 
+Or just grab `SessionLimit.exe` from
+[Releases](https://github.com/SuperCatCraze/SessionLimit/releases) and run it — it updates
+itself from there afterwards.
+
+## Updates
+
+The running version sits in the footer, next to a `↻` that checks
+[Releases](https://github.com/SuperCatCraze/SessionLimit/releases) on demand. It also polls
+every 6 hours in the background; when a newer tag appears an **Update** button shows up.
+
+Updating downloads the new build, swaps it in and relaunches — no installer, no elevation,
+and your settings, position and usage history all carry over. Windows won't let a running
+executable be deleted but will let it be *renamed*, which is what makes the in-place swap
+possible: the old build becomes `SessionLimit.exe.old` and is cleaned up on the next start.
+
+Before anything is swapped in, the download must match the release's byte size, actually be
+a Windows executable, and carry the version its tag claims — a self-updater runs whatever it
+downloads, so a truncated or mismatched file never reaches the swap. Background checking can
+be turned off under **Updates** in settings; the check is anonymous and sends nothing.
+
+Releases are cut by tagging: `git tag v0.3.1 && git push --tags` builds, verifies the binary
+is stamped to match the tag, and publishes it with a SHA-256.
+
 ## Build
 
 ```sh

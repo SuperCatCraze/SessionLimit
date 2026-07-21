@@ -49,6 +49,12 @@ public sealed class AppConfig
     public int  MaxModelRows       { get; set; } = 8;
     public int  MaxProjectRows     { get; set; } = 5;
 
+    // ---- updates -------------------------------------------------------
+    /// <summary>Poll GitHub Releases in the background. Checking is anonymous — nothing is sent.</summary>
+    public bool AutoCheckUpdates { get; set; } = true;
+    public int UpdateCheckIntervalHours { get; set; } = 6;
+    public DateTimeOffset? LastUpdateCheck { get; set; }
+
     // ---- appearance ---------------------------------------------------
     public double Opacity { get; set; } = 0.94;
     // Nullable, not NaN: System.Text.Json refuses to write NaN/Infinity.

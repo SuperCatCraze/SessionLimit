@@ -209,6 +209,11 @@
             <CheckBox x:Name="CbTop"     Content="Always on top"/>
             <CheckBox x:Name="CbStartup" Content="Start with Windows"/>
 
+            <TextBlock Text="UPDATES" Style="{StaticResource Lbl}" Margin="0,10,0,4"/>
+            <CheckBox x:Name="CbAutoUpdate" Content="Check GitHub for updates automatically"/>
+            <TextBlock x:Name="UpdateHint" Style="{StaticResource Lbl}" TextWrapping="Wrap"
+                       Margin="0,3,0,0" Text=""/>
+
             <Grid Margin="0,8,0,0">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -232,6 +237,42 @@
 
         </StackPanel>
       </ScrollViewer>
+
+      <!-- ===== footer: version, updater, watermark ===== -->
+      <!-- Outside the ScrollViewer so the build you're running is always in view. -->
+      <Border Height="1" Background="{StaticResource Stroke}" Margin="0,10,0,7"/>
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+          <TextBlock x:Name="VersionText" Style="{StaticResource Lbl}" Text="v—"/>
+          <StackPanel Orientation="Horizontal" x:Name="Watermark" Cursor="Hand"
+                      Background="Transparent" Margin="0,1,0,0"
+                      ToolTip="github.com/SuperCatCraze"
+                      MouseLeftButtonUp="Watermark_Click">
+            <TextBlock Text="@" Style="{StaticResource Lbl}" Foreground="{StaticResource Accent}"
+                       FontWeight="Bold" Opacity="0.9"/>
+            <TextBlock Text="supercatcraze" Style="{StaticResource Lbl}" Opacity="0.75"/>
+          </StackPanel>
+        </StackPanel>
+
+        <TextBlock x:Name="UpdateStatus" Grid.Column="1" Style="{StaticResource Lbl}" Text=""
+                   VerticalAlignment="Center" Margin="10,0,6,0"
+                   TextTrimming="CharacterEllipsis"/>
+
+        <Button x:Name="BtnUpdate" Grid.Column="2" Content="Update" Style="{StaticResource FlatBtn}"
+                Padding="7,2" Margin="0,0,4,0" VerticalAlignment="Center"
+                Visibility="Collapsed" Click="Update_Click"/>
+
+        <Button Grid.Column="3" Content="↻" Style="{StaticResource IconBtn}"
+                VerticalAlignment="Center" Click="CheckUpdate_Click"
+                ToolTip="Check GitHub for updates"/>
+      </Grid>
 
     </StackPanel>
   </Border>

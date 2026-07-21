@@ -1,0 +1,60 @@
+name: release
+
+# Tag a commit v0.3.0 and push it; this publishes the release the in-app updater reads.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.3.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish single-file
+        run: >
+          dotnet publish SessionLimit/SessionLimit.csproj -c Release -r win-x64
+          --self-contained true -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true -o publish
+
+      # The updater refuses a download whose stamped version doesn't match the tag, so a
+      # mismatch here would ship an update nobody can install. Fail now instead.
+      - name: Check the binary matches the tag
+        shell: pwsh
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ github.event.inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $expected = $tag.TrimStart('v')
+          $actual = (Get-Item publish/SessionLimit.exe).VersionInfo.FileVersion
+          Write-Host "tag $tag -> expected $expected, binary reports $actual"
+          if ([version]$actual -ne [version]$expected) {
+            throw "Version mismatch: bump <Version> in SessionLimit.csproj to $expected"
+          }
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          (Get-FileHash publish/SessionLimit.exe -Algorithm SHA256).Hash.ToLower() |
+            Out-File publish/SessionLimit.exe.sha256 -Encoding ascii -NoNewline
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ github.event.inputs.tag }}' } else { '${{ github.ref_name }}' }
+          gh release create $tag publish/SessionLimit.exe publish/SessionLimit.exe.sha256 `
+            --repo ${{ github.repository }} --title $tag --generate-notes
