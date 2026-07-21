@@ -78,5 +78,53 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ github.event.inputs.tag }}' } else { '${{ github.ref_name }}' }
+          $sha = Get-Content publish/SessionLimit.exe.sha256 -Raw
+          $size = [math]::Round((Get-Item publish/SessionLimit.exe).Length / 1MB, 0)
+
+          # Commit list from the previous tag, so the page says what actually changed
+          # instead of only linking to a diff.
+          $changes = gh api "repos/${{ github.repository }}/releases/generate-notes" `
+                       -f tag_name=$tag --jq '.body'
+
+          # A backtick is PowerShell's escape character, so Markdown code markers are built
+          # from char 96 rather than written literally.
+          $bt = [string][char]96
+          $fence = $bt * 3
+
+          $body = @"
+An always-on-top overlay for live Claude usage: session and weekly percentages, burn rate
+with a projected time to your limit, per-model and per-project breakdown, and threshold
+alerts before you run out.
+
+## Install
+
+Download **SessionLimit.exe** below ($size MB) and run it. Nothing else is needed — .NET is
+bundled, and it never asks for administrator rights.
+
+For Start Menu and desktop shortcuts plus launch-on-login, run ${bt}install.ps1${bt} from the
+repo, or just tick **Start with Windows** in the app's ⚙ settings.
+
+It keeps itself up to date from here: the footer shows the version you are running and a ↻
+that checks for new releases, and updating is one button.
+
+## Verify the download
+
+${fence}powershell
+(Get-FileHash SessionLimit.exe -Algorithm SHA256).Hash.ToLower()
+$fence
+
+should print ${bt}$sha${bt}
+
+## Requirements
+
+Windows 10 or 11, 64-bit. Real plan percentages come from Claude Code, so they need it
+installed; without it the bars fall back to your own token budget and say so.
+
+---
+
+$changes
+"@
+          $body | Out-File release-notes.md -Encoding utf8
+
           gh release create $tag publish/SessionLimit.exe publish/SessionLimit.exe.sha256 `
-            --repo ${{ github.repository }} --title $tag --generate-notes
+            --repo ${{ github.repository }} --title "Session Limit $tag" --notes-file release-notes.md
