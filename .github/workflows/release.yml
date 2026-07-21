@@ -28,8 +28,26 @@ jobs:
       - name: Publish single-file
         run: >
           dotnet publish SessionLimit/SessionLimit.csproj -c Release -r win-x64
-          --self-contained true -p:PublishSingleFile=true
-          -p:EnableCompressionInSingleFile=true -o publish
+          --self-contained true -p:PublishSingleFile=true -o publish
+
+      # A release the app installs on itself must at minimum survive being started.
+      # v0.3.0 shipped a bundle that ran for seven seconds and died with
+      # DllNotFoundException, which nothing else in this pipeline would have caught.
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $err = Join-Path $env:RUNNER_TEMP 'smoke-stderr.txt'
+          $p = Start-Process publish/SessionLimit.exe -PassThru `
+                 -RedirectStandardError $err -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'smoke-stdout.txt')
+          $waited = 0
+          while (-not $p.HasExited -and $waited -lt 25) { Start-Sleep -Seconds 1; $waited++ }
+          if ($p.HasExited) {
+            Write-Host "::error::Exited after ${waited}s with code $($p.ExitCode)"
+            Get-Content $err -ErrorAction SilentlyContinue | Write-Host
+            throw "The published build does not stay running."
+          }
+          $p | Stop-Process -Force
+          Write-Host "Still running after ${waited}s."
 
       # The updater refuses a download whose stamped version doesn't match the tag, so a
       # mismatch here would ship an update nobody can install. Fail now instead.

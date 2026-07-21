@@ -77,7 +77,7 @@ if ($Uninstall) {
 # ------------------------------------------------------------------ install
 $source = Join-Path $PSScriptRoot 'publish\SessionLimit.exe'
 if (-not (Test-Path $source)) {
-    throw "Not found: $source`nPublish first:`n  dotnet publish SessionLimit/SessionLimit.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish"
+    throw "Not found: $source`nPublish first:`n  dotnet publish SessionLimit/SessionLimit.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish`nOr download it from https://github.com/SuperCatCraze/SessionLimit/releases"
 }
 
 Write-Host "Installing $AppName..." -ForegroundColor Cyan

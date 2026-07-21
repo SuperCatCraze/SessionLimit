@@ -10,11 +10,11 @@
     <RootNamespace>SessionLimit</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
 
-    <Version>0.3.0</Version>
-    <AssemblyVersion>0.3.0.0</AssemblyVersion>
-    <FileVersion>0.3.0.0</FileVersion>
+    <Version>0.3.1</Version>
+    <AssemblyVersion>0.3.1.0</AssemblyVersion>
+    <FileVersion>0.3.1.0</FileVersion>
     <!-- The updater parses this to decide whether a release is newer. -->
-    <InformationalVersion>0.3.0</InformationalVersion>
+    <InformationalVersion>0.3.1</InformationalVersion>
     <Product>Session Limit</Product>
     <AssemblyTitle>Session Limit</AssemblyTitle>
     <Company>SuperCatCraze</Company>
@@ -22,6 +22,14 @@
     <Copyright>Copyright © 2026 SuperCatCraze</Copyright>
     <Description>Live Claude usage overlay: session and weekly limits, burn rate, and threshold alerts.</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Single-file packaging. Kept here rather than on the publish command line so every
+         publish gets it: a compressed bundle that keeps WPF's native libraries in memory
+         instead of on disk starts, runs for a few seconds and then dies with
+         "System.DllNotFoundException: Dll was not found" from HwndSubclass. Extracting
+         them costs ~4 MB of download and makes it reliable. -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <!-- Desktop widget: favour a small, steady working set over throughput. -->
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>

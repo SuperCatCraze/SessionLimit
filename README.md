@@ -146,9 +146,12 @@ Build a self-contained executable — no .NET runtime needed on the target machi
 
 ```sh
 dotnet publish SessionLimit/SessionLimit.csproj -c Release -r win-x64 `
-  --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true `
-  -o publish
+  --self-contained true -p:PublishSingleFile=true -o publish
 ```
+
+(Compression and native-library extraction are set in the project file. Both matter: WPF's
+native libraries loaded straight out of a *compressed* bundle fail to resolve, and the app
+dies a few seconds in with `DllNotFoundException`.)
 
 Then run `install.ps1`, which copies the executable to
 `%LOCALAPPDATA%\Programs\SessionLimit`, adds Start Menu and desktop shortcuts, and
