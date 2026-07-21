@@ -46,6 +46,11 @@ public sealed class AppConfig
     public bool ShowUnusedModels   { get; set; } = true;
     public bool ShowSources        { get; set; } = true;
     public bool ShowCost           { get; set; } = true;
+    /// <summary>Fable's weekly allowance is separate from the all-models pool.</summary>
+    public bool ShowFable          { get; set; } = true;
+    public bool ShowAccount        { get; set; } = true;
+    /// <summary>Off by default: this window sits on top of everything, including screen shares.</summary>
+    public bool ShowAccountEmail   { get; set; } = false;
     public int  MaxModelRows       { get; set; } = 8;
     public int  MaxProjectRows     { get; set; } = 5;
 

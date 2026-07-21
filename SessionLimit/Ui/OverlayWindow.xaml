@@ -33,6 +33,21 @@
                 Click="Close_Click" ToolTip="Close"/>
       </Grid>
 
+      <!-- ===== signed-in account ===== -->
+      <Grid x:Name="AccountRow" Margin="0,-4,0,9">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <TextBlock x:Name="AccountName" Grid.Column="0" Style="{StaticResource Lbl}"
+                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Text=""/>
+        <Border x:Name="PlanPill" Grid.Column="1" Background="{StaticResource TrackBg}"
+                CornerRadius="3" Padding="5,1" Visibility="Collapsed">
+          <TextBlock x:Name="AccountPlan" Style="{StaticResource Lbl}"
+                     Foreground="{StaticResource Accent}" Text=""/>
+        </Border>
+      </Grid>
+
       <ScrollViewer MaxHeight="760" VerticalScrollBarVisibility="Auto"
                     HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
@@ -95,6 +110,23 @@
                        ToolTip="Cost is notional API list-price value, not money billed on a subscription plan."/>
           </StackPanel>
 
+          <!-- ===== Fable's own weekly allowance ===== -->
+          <StackPanel x:Name="FableSection">
+            <Grid Margin="0,0,0,3">
+              <TextBlock x:Name="FableLabel" Text="FABLE · week" Style="{StaticResource Lbl}"/>
+              <TextBlock x:Name="FablePct" Text="" Style="{StaticResource Lbl}" HorizontalAlignment="Right"/>
+            </Grid>
+            <Border Background="{StaticResource TrackBg}" CornerRadius="3" Height="7" Margin="0,0,0,10">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition x:Name="FableFill" Width="0*"/>
+                  <ColumnDefinition x:Name="FableRest" Width="100*"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="FableBar" Grid.Column="0" Background="{StaticResource Accent}" CornerRadius="3"/>
+              </Grid>
+            </Border>
+          </StackPanel>
+
           <!-- ===== per-model ===== -->
           <StackPanel x:Name="ModelSection">
             <Border Height="1" Background="{StaticResource Stroke}" Margin="0,0,0,8"/>
@@ -137,9 +169,16 @@
                 <CheckBox x:Name="CbShowProjects" Content="By project"/>
                 <CheckBox x:Name="CbShowSources"  Content="Sources"/>
                 <CheckBox x:Name="CbShowUnused"   Content="Unused models"/>
+                <CheckBox x:Name="CbShowFable"    Content="Fable bar"/>
                 <CheckBox x:Name="CbCompact"      Content="Compact"/>
               </StackPanel>
             </Grid>
+
+            <TextBlock Text="ACCOUNT" Style="{StaticResource Lbl}" Margin="0,10,0,4"/>
+            <CheckBox x:Name="CbShowAccount" Content="Show who is signed in"/>
+            <CheckBox x:Name="CbShowEmail"   Content="Include the email address"/>
+            <TextBlock x:Name="AccountHint" Style="{StaticResource Lbl}" TextWrapping="Wrap"
+                       Margin="0,3,0,0" Text=""/>
 
             <TextBlock Text="DATA SOURCES" Style="{StaticResource Lbl}" Margin="0,10,0,4"/>
             <CheckBox x:Name="CbTranscripts" Content="Claude Code transcripts (token ledger)"/>

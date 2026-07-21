@@ -97,7 +97,24 @@ public sealed class PlanUsage
 {
     public double? SessionPercent { get; set; }
     public double? WeeklyPercent { get; set; }
+    /// <summary>Fable bills against its own weekly allowance, separate from the all-models pool.</summary>
+    public double? FableWeeklyPercent { get; set; }
+
+    // Anthropic prints the real reset moments; keep the text verbatim for display and the
+    // parsed instant for a countdown, since the text is the more durable of the two.
+    public string? SessionResetText { get; set; }
+    public string? WeeklyResetText { get; set; }
+    public DateTimeOffset? SessionResetAt { get; set; }
+    public DateTimeOffset? WeeklyResetAt { get; set; }
+
     public DateTimeOffset? CapturedAt { get; set; }
     public string? Raw { get; set; }
+
+    /// <summary>True once a real reading has ever landed, however old.</summary>
+    public bool HasReading => CapturedAt is not null &&
+                              (SessionPercent ?? WeeklyPercent ?? FableWeeklyPercent) is not null;
+
     public bool IsFresh => CapturedAt is { } t && (DateTimeOffset.Now - t) < TimeSpan.FromMinutes(20);
+
+    public TimeSpan? Age => CapturedAt is { } t ? DateTimeOffset.Now - t : null;
 }

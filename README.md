@@ -23,23 +23,36 @@ So:
 | | Status | How |
 |---|---|---|
 | Session % (5h window) | ✅ real | scraped from `claude /usage` |
-| Weekly % | ✅ real | scraped from `claude /usage` |
+| Weekly % (all models) | ✅ real | scraped from `claude /usage` |
+| **Fable weekly %** | ✅ real | Fable carries its *own* weekly allowance |
+| **Session + weekly reset times** | ✅ real | printed by `/usage`, with the timezone |
+| Signed-in account and plan | ✅ real | `~/.claude.json` (local sign-in state) |
 | Tokens + cost, live | ✅ real | Claude Code transcripts / OTEL |
 | Per-model breakdown | ✅ real | transcripts |
-| Session reset countdown | ✅ derived | 5h from the window anchor |
 | Org API billing | ✅ real | Anthropic Admin API (separate from your subscription) |
-| Exact remaining quota | ❌ | not exposed anywhere |
-| Weekly reset timestamp | ❌ | not exposed anywhere |
-| Per-model allowance (e.g. "Fable left") | ❌ | Pro/Max quota is one shared pool, not per-model |
+| Exact remaining quota, in tokens | ❌ | only percentages are published |
 | Login from another location | ❌ | no API — web settings UI only |
 
 Anything marked ❌ is genuinely unavailable, not merely unimplemented. The only way to get
 it would be scraping claude.ai with your session cookie, which violates Anthropic's ToS
 and breaks whenever the page changes. This app does not do that.
 
+The two rows in bold used to be ❌ here. Anthropic added a separate Fable allowance and
+real reset timestamps to `/usage`, so they are read rather than guessed now — worth
+re-checking that output occasionally, because what it exposes does change.
+
+The account row is *local sign-in state*, not a session list: it says who this machine is
+authenticated as. If that changes while the app is running you get an alert, because the
+numbers now describe a different account — but it cannot tell you about other devices.
+
 When real plan percentages are unavailable, the bars fall back to **your own token
 budget** and the labels switch from `plan` to `budget` so you always know which you're
 looking at.
+
+A budget estimate is never substituted for a plan percentage once a real one has been
+read. The two measure different things and diverge hard — a fresh 5-hour window once read
+as 14% of budget while the plan was actually at 82%. So a stale reading is shown as
+`plan (stale)` rather than being replaced by a number that looks authoritative and isn't.
 
 ---
 
@@ -116,7 +129,9 @@ Every panel below can be toggled independently under **Display** in settings.
 
 | Panel | Contents |
 |---|---|
+| Account | who Claude Code is signed in as, with a plan badge (`Max 5×`). The email is opt-in — this window sits on top of everything, screen shares included |
 | Session bar | 5h window %, reset countdown, tokens, cost, request count |
+| Fable bar | Fable's separate weekly allowance, shown only when `/usage` reports one |
 | Token split | input / output / cache read / cache write |
 | Burn rate | tokens per minute, cache hit rate, and **projected time to 100%** — warns when you're on pace to exhaust the window *before* it resets |
 | Weekly bar | rolling 7-day %, tokens, cost, requests |

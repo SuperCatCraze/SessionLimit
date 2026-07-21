@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -16,6 +17,18 @@ public sealed class UsageCommandCollector : IDisposable
 {
     private static readonly Regex Ansi = new(@"\x1B\[[0-9;?]*[ -/]*[@-~]", RegexOptions.Compiled);
     private static readonly Regex Percent = new(@"(\d{1,3}(?:\.\d+)?)\s*%", RegexOptions.Compiled);
+
+    private static readonly Regex SessionLine = new(
+        @"current\s+session\s*:\s*(\d{1,3}(?:\.\d+)?)\s*%",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex WeekLine = new(
+        @"current\s+week\s*(?:\(\s*([^)]*?)\s*\))?\s*:\s*(\d{1,3}(?:\.\d+)?)\s*%",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex ResetPart = new(
+        @"resets\s+(.+?)\s*(?:\(([^)]+)\)\s*)?$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly AppConfig _cfg;
     private readonly SourceStatus _status;
@@ -67,9 +80,9 @@ public sealed class UsageCommandCollector : IDisposable
             }
 
             var clean = Ansi.Replace(output, "");
-            var (session, weekly) = Parse(clean);
+            var r = Parse(clean);
 
-            if (session is null && weekly is null)
+            if (r.Session is null && r.Weekly is null && r.Fable is null)
             {
                 _status.Healthy = false;
                 _status.Detail = "unparseable";
@@ -78,13 +91,19 @@ public sealed class UsageCommandCollector : IDisposable
             }
             else
             {
-                Plan.SessionPercent = session;
-                Plan.WeeklyPercent = weekly;
+                Plan.SessionPercent    = r.Session;
+                Plan.WeeklyPercent     = r.Weekly;
+                Plan.FableWeeklyPercent = r.Fable;
+                Plan.SessionResetText  = r.SessionReset;
+                Plan.WeeklyResetText   = r.WeeklyReset;
+                Plan.SessionResetAt    = r.SessionResetAt;
+                Plan.WeeklyResetAt     = r.WeeklyResetAt;
                 Plan.CapturedAt = DateTimeOffset.Now;
                 Plan.Raw = Trim(clean);
                 _status.Healthy = true;
                 _status.LastData = DateTimeOffset.Now;
-                _status.Detail = $"session {session?.ToString("0") ?? "-"}% / week {weekly?.ToString("0") ?? "-"}%";
+                _status.Detail = $"session {r.Session?.ToString("0") ?? "-"}% / week {r.Weekly?.ToString("0") ?? "-"}%"
+                               + (r.Fable is { } f ? $" / fable {f:0}%" : "");
                 Log.Info($"usage-cmd: {_status.Detail}");
             }
             Updated?.Invoke();
@@ -98,11 +117,68 @@ public sealed class UsageCommandCollector : IDisposable
         finally { Interlocked.Exchange(ref _running, 0); }
     }
 
+    internal readonly record struct PlanReading(
+        double? Session, double? Weekly, double? Fable,
+        string? SessionReset, string? WeeklyReset,
+        DateTimeOffset? SessionResetAt, DateTimeOffset? WeeklyResetAt);
+
     /// <summary>
-    /// Pulls the first percentage off whichever line mentions the session or the week.
-    /// Deliberately loose — the surrounding wording changes more often than the numbers.
+    /// Reads the limit lines out of <c>/usage</c>. The current shape is
+    ///
+    ///   Current session: 82% used · resets Jul 21, 1:39am (America/Chicago)
+    ///   Current week (all models): 80% used · resets Jul 22, 4:59pm (America/Chicago)
+    ///   Current week (Fable): 26% used · resets Jul 22, 4:59pm (America/Chicago)
+    ///
+    /// Matching is anchored on "current session" / "current week" rather than on any
+    /// percentage, because the paragraphs underneath are full of percentages
+    /// ("88% of your usage came from sessions active for 8+ hours") that would otherwise
+    /// be mistaken for limits. If none of those lines are found, fall back to the older
+    /// loose scan so a wording change degrades instead of going blank.
     /// </summary>
-    internal static (double? Session, double? Weekly) Parse(string text)
+    internal static PlanReading Parse(string text)
+    {
+        double? session = null, weekly = null, fable = null;
+        string? sessionReset = null, weeklyReset = null;
+        DateTimeOffset? sessionResetAt = null, weeklyResetAt = null;
+
+        foreach (var rawLine in text.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0) continue;
+
+            if (SessionLine.Match(line) is { Success: true } sm &&
+                double.TryParse(sm.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var sp))
+            {
+                session = sp;
+                (sessionReset, sessionResetAt) = ParseReset(line);
+                continue;
+            }
+
+            if (WeekLine.Match(line) is { Success: true } wm &&
+                double.TryParse(wm.Groups[2].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var wp))
+            {
+                var scope = wm.Groups[1].Value;
+                if (scope.Contains("fable", StringComparison.OrdinalIgnoreCase))
+                {
+                    fable = wp;
+                }
+                else
+                {
+                    weekly = wp;
+                    (weeklyReset, weeklyResetAt) = ParseReset(line);
+                }
+            }
+        }
+
+        if (session is null && weekly is null && fable is null)
+            (session, weekly) = ParseLoose(text);
+
+        return new PlanReading(session, weekly, fable, sessionReset, weeklyReset,
+                               sessionResetAt, weeklyResetAt);
+    }
+
+    /// <summary>Pre-2026 wording: first percentage on any line mentioning session or week.</summary>
+    private static (double? Session, double? Weekly) ParseLoose(string text)
     {
         double? session = null, weekly = null;
 
@@ -113,17 +189,70 @@ public sealed class UsageCommandCollector : IDisposable
 
             var m = Percent.Match(line);
             if (!m.Success) continue;
-            if (!double.TryParse(m.Groups[1].Value, out var pct)) continue;
+            if (!double.TryParse(m.Groups[1].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var pct)) continue;
 
             var lower = line.ToLowerInvariant();
             if (session is null && (lower.Contains("session") || lower.Contains("5-hour") ||
-                                    lower.Contains("5 hour") || lower.Contains("current session")))
+                                    lower.Contains("5 hour")))
                 session = pct;
             else if (weekly is null && (lower.Contains("week") || lower.Contains("7-day") ||
                                         lower.Contains("7 day")))
                 weekly = pct;
         }
         return (session, weekly);
+    }
+
+    /// <summary>
+    /// "· resets Jul 22, 4:59pm (America/Chicago)" -> the text as printed, plus the instant
+    /// when it can be resolved. The year is absent from the output, so the nearest one is
+    /// assumed; the text is kept regardless so a countdown is a bonus, never a dependency.
+    /// </summary>
+    private static (string?, DateTimeOffset?) ParseReset(string line)
+    {
+        var m = ResetPart.Match(line);
+        if (!m.Success) return (null, null);
+
+        var when = m.Groups[1].Value.Trim();
+        var zone = m.Groups[2].Success ? m.Groups[2].Value.Trim() : null;
+        return (when, ResolveReset(when, zone));
+    }
+
+    private static readonly string[] ResetFormats =
+    {
+        "MMM d, h:mmtt", "MMM d, h:mm tt", "MMM d, htt", "MMM d, H:mm",
+        "MMM d yyyy, h:mmtt", "MMM d, yyyy h:mmtt"
+    };
+
+    private static DateTimeOffset? ResolveReset(string when, string? zoneId)
+    {
+        try
+        {
+            if (!DateTime.TryParseExact(when.ToUpperInvariant(), ResetFormats,
+                                        CultureInfo.InvariantCulture,
+                                        DateTimeStyles.AllowWhiteSpaces, out var naive))
+                return null;
+
+            TimeZoneInfo? zone = null;
+            if (!string.IsNullOrEmpty(zoneId))
+                try { zone = TimeZoneInfo.FindSystemTimeZoneById(zoneId); } catch { /* unknown id */ }
+
+            var year = naive.Year > 1 && when.Contains(naive.Year.ToString()) ? naive.Year : DateTime.Now.Year;
+            var local = new DateTime(year, naive.Month, naive.Day, naive.Hour, naive.Minute, 0,
+                                     DateTimeKind.Unspecified);
+
+            var result = zone is null
+                ? new DateTimeOffset(local, DateTimeOffset.Now.Offset)
+                : new DateTimeOffset(local, zone.GetUtcOffset(local));
+
+            // A reset far in the past means the year rolled over between print and parse.
+            if (result < DateTimeOffset.Now.AddDays(-180)) result = result.AddYears(1);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"usage-cmd: could not resolve reset '{when}'", ex);
+            return null;
+        }
     }
 
     private static async Task<string> RunAsync(string exe, string args)

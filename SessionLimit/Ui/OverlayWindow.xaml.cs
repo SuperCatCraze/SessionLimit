@@ -29,6 +29,8 @@ public partial class OverlayWindow : Window
     private UsageCommandCollector? _usageCmd;
     private AdminApiCollector? _adminApi;
 
+    private readonly AccountWatcher _account = new();
+
     private UpdateInfo? _update;
     private bool _updateBusy;
     // Not at t=0: the first seconds belong to the backfill, not to a network round-trip.
@@ -51,9 +53,18 @@ public partial class OverlayWindow : Window
             try { DragMove(); } catch { /* mouse released mid-drag */ }
         };
 
+        // Not "someone else is using your account" — Anthropic exposes no device list — but
+        // a switch here does mean the numbers now describe a different account.
+        _account.Switched += (was, now) => ToastWindow.Show(
+            "Claude account changed",
+            $"Signed in as {now.Label} ({now.Plan}). Was {was?.Label ?? "someone else"}.",
+            ToastWindow.Severity.Warn, _cfg.NotificationSound);
+        _account.Poll();
+
         _store.Changed += () => Dispatcher.BeginInvoke(Render);
         _tick.Tick += (_, _) =>
         {
+            _account.Poll();         // self-throttled to every 30 s
             Render();
             _store.SaveState();      // self-throttled to every 30 s
             MaybeAutoCheckUpdate();
@@ -143,39 +154,57 @@ public partial class OverlayWindow : Window
             var session = _store.CurrentSession();
             var week = _store.CurrentWeek();
             var plan = _usageCmd?.Plan;
-            var planFresh = plan is { IsFresh: true };
 
-            // Real plan % beats a local budget estimate whenever we have it.
-            double? sessionPct = planFresh ? plan!.SessionPercent : null;
-            double? weekPct    = planFresh ? plan!.WeeklyPercent  : null;
-            var isReal = sessionPct.HasValue || weekPct.HasValue;
+            // A budget estimate is NOT a stand-in for a plan percentage. They measure
+            // different things and diverge wildly — a fresh 5 h window read 14% of budget
+            // while the plan was at 82%. So once a real reading has landed, keep showing
+            // it (labelled stale if old) rather than swapping in an unrelated number, and
+            // only fall back to budget when /usage is off or has never worked.
+            var haveReading = plan is { HasReading: true };
+            var stale = haveReading && !plan!.IsFresh;
 
-            sessionPct ??= Percent(session.TotalTokens, _cfg.SessionTokenBudget);
-            weekPct    ??= Percent(week.TotalTokens,    _cfg.WeeklyTokenBudget);
+            double? sessionPct = haveReading ? plan!.SessionPercent : null;
+            double? weekPct    = haveReading ? plan!.WeeklyPercent  : null;
+            double? fablePct   = haveReading ? plan!.FableWeeklyPercent : null;
 
-            SessionLabel.Text = isReal && plan!.SessionPercent.HasValue
-                ? "SESSION · 5h · plan"
-                : "SESSION · 5h · budget";
-            WeekLabel.Text = isReal && plan!.WeeklyPercent.HasValue
-                ? "WEEK · plan"
-                : "WEEK · 7d rolling · budget";
+            var sessionIsPlan = sessionPct.HasValue;
+            var weekIsPlan    = weekPct.HasValue;
+
+            // "waiting" only while /usage is enabled and still expected to answer.
+            var waiting = _cfg.EnableUsageCmd && !haveReading &&
+                          DateTimeOffset.Now - _startedAt < TimeSpan.FromMinutes(2);
+
+            if (!sessionIsPlan && !waiting) sessionPct = Percent(session.TotalTokens, _cfg.SessionTokenBudget);
+            if (!weekIsPlan    && !waiting) weekPct    = Percent(week.TotalTokens,    _cfg.WeeklyTokenBudget);
+
+            var isReal = sessionIsPlan || weekIsPlan;
+
+            SessionLabel.Text = sessionIsPlan
+                ? (stale ? "SESSION · 5h · plan (stale)" : "SESSION · 5h · plan")
+                : waiting ? "SESSION · 5h · reading…" : "SESSION · 5h · budget";
+            WeekLabel.Text = weekIsPlan
+                ? (stale ? "WEEK · plan (stale)" : "WEEK · plan")
+                : waiting ? "WEEK · reading…" : "WEEK · 7d rolling · budget";
 
             SetBar(SessionFill, SessionRest, SessionBar, sessionPct);
             SetBar(WeekFill, WeekRest, WeekBar, weekPct);
 
-            SessionReset.Text = session.Remaining is { } r
-                ? $"resets in {NotificationEngine.Fmt(r)}"
-                : session.Requests == 0 ? "idle" : "";
+            // Anthropic prints the real reset moment; only derive one when it doesn't.
+            SessionReset.Text = ResetLabel(plan?.SessionResetAt, plan?.SessionResetText, session);
 
             SessionDetail.Text = Describe(session, sessionPct);
-            WeekPct.Text = weekPct is { } wp ? $"{wp:0}%" : "";
+            WeekPct.Text = weekPct is { } wp
+                ? $"{wp:0}%{(plan?.WeeklyResetAt is { } wr ? $" · {Until(wr)}" : "")}"
+                : "";
             WeekDetail.Text = Describe(week, null);
+            RenderFable(fablePct, plan);
 
             RenderBreakdown(session);
             RenderRates(session, sessionPct);
             RenderModels(session, week);
             RenderProjects(session);
             RenderSources();
+            RenderAccount();
             ApplySectionVisibility();
 
             // Live dot pulses green when something billed in the last two minutes.
@@ -186,9 +215,7 @@ public partial class OverlayWindow : Window
             // Don't alert off the budget fallback while a real-percentage source is still
             // starting up — /usage takes a few seconds, and firing early produces bogus
             // alerts ("weekly at 3499%") that a moment later resolve to the true figure.
-            var planPending = _cfg.EnableUsageCmd && !planFresh &&
-                              DateTimeOffset.Now - _startedAt < TimeSpan.FromMinutes(2);
-            if (!planPending)
+            if (!waiting)
                 _notifier.Evaluate(sessionPct, weekPct, session, isReal);
         }
         catch (Exception ex) { Log.Error("render failed", ex); }
@@ -203,6 +230,70 @@ public partial class OverlayWindow : Window
         if (pct is { } p) parts.Add($"{p:0}%");
         parts.Add($"{s.Requests} req");
         return string.Join("  ·  ", parts);
+    }
+
+    /// <summary>Prefers Anthropic's own reset moment over the one derived from the ledger.</summary>
+    private static string ResetLabel(DateTimeOffset? at, string? text, WindowStats session)
+    {
+        if (at is { } t && t > DateTimeOffset.Now) return $"resets in {Until(t)}";
+        if (!string.IsNullOrWhiteSpace(text)) return $"resets {text}";
+        if (session.Remaining is { } r) return $"resets in {NotificationEngine.Fmt(r)}";
+        return session.Requests == 0 ? "idle" : "";
+    }
+
+    private static string Until(DateTimeOffset t)
+    {
+        var d = t - DateTimeOffset.Now;
+        if (d <= TimeSpan.Zero) return "now";
+        return d.TotalDays >= 1
+            ? $"{(int)d.TotalDays}d {d.Hours}h"
+            : NotificationEngine.Fmt(d);
+    }
+
+    /// <summary>
+    /// Fable draws on its own weekly allowance rather than the shared pool, so it gets its
+    /// own bar — but only when /usage actually reports one.
+    /// </summary>
+    private void RenderFable(double? pct, PlanUsage? plan)
+    {
+        if (!_cfg.ShowFable || _cfg.Compact || pct is null) return;
+
+        SetBar(FableFill, FableRest, FableBar, pct);
+        FablePct.Text = $"{pct:0}%";
+        FableLabel.Text = plan?.WeeklyResetAt is { } r && r > DateTimeOffset.Now
+            ? $"FABLE · week · resets in {Until(r)}"
+            : "FABLE · week";
+    }
+
+    private void RenderAccount()
+    {
+        if (!_cfg.ShowAccount) return;
+
+        var a = _account.Current;
+        if (a is null)
+        {
+            AccountName.Text = "";
+            PlanPill.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        // The email is opt-in: this window sits on top of everything, screen shares included.
+        AccountName.Text = _cfg.ShowAccountEmail && !string.IsNullOrWhiteSpace(a.Email)
+            ? $"{a.Label} · {a.Email}"
+            : a.Label;
+
+        AccountPlan.Text = a.Plan;
+        PlanPill.Visibility = string.IsNullOrWhiteSpace(a.Plan) ? Visibility.Collapsed : Visibility.Visible;
+
+        var tip = string.Join("\n", new[]
+        {
+            string.IsNullOrWhiteSpace(a.Email) ? null : a.Email,
+            string.IsNullOrWhiteSpace(a.Organization) ? null : a.Organization,
+            string.IsNullOrWhiteSpace(a.Plan) ? null : $"Plan: {a.Plan}",
+            a.ExtraUsage ? "Extra usage enabled" : null,
+            "Signed in on this machine — Anthropic exposes no list of other devices."
+        }.Where(x => x is not null));
+        AccountRow.ToolTip = tip;
     }
 
     private void RenderBreakdown(WindowStats s)
@@ -365,6 +456,12 @@ public partial class OverlayWindow : Window
         BreakdownSection.Visibility = V(_cfg.ShowTokenBreakdown);
         RatesSection.Visibility     = V(_cfg.ShowRates);
         WeekSection.Visibility      = _cfg.ShowWeekly ? Visibility.Visible : Visibility.Collapsed;
+        // Only ever shown when /usage actually reports a Fable allowance.
+        FableSection.Visibility     = V(_cfg.ShowFable) == Visibility.Visible &&
+                                      _usageCmd?.Plan.FableWeeklyPercent is not null
+                                      ? Visibility.Visible : Visibility.Collapsed;
+        AccountRow.Visibility       = _cfg.ShowAccount && _account.Current is not null
+                                      ? Visibility.Visible : Visibility.Collapsed;
         ModelSection.Visibility     = V(_cfg.ShowModels);
         ProjectSection.Visibility   = V(_cfg.ShowProjects);
         SourceSection.Visibility    = V(_cfg.ShowSources);
@@ -479,6 +576,14 @@ public partial class OverlayWindow : Window
         CbShowProjects.IsChecked  = _cfg.ShowProjects;
         CbShowSources.IsChecked   = _cfg.ShowSources;
         CbShowUnused.IsChecked    = _cfg.ShowUnusedModels;
+        CbShowFable.IsChecked     = _cfg.ShowFable;
+        CbShowAccount.IsChecked   = _cfg.ShowAccount;
+        CbShowEmail.IsChecked     = _cfg.ShowAccountEmail;
+
+        AccountHint.Text = _account.Current is { } acct
+            ? $"{acct.Email} · {acct.Plan}{(acct.ExtraUsage ? " · extra usage on" : "")}. " +
+              "Read from this machine's Claude Code sign-in; there is no API listing other devices."
+            : "No signed-in account found in ~/.claude.json.";
 
         TxtOtelPort.Text          = _cfg.OtelPort.ToString();
         TxtAdminKey.Password      = _cfg.AdminApiKey;
@@ -517,6 +622,9 @@ public partial class OverlayWindow : Window
         _cfg.ShowProjects      = CbShowProjects.IsChecked == true;
         _cfg.ShowSources       = CbShowSources.IsChecked == true;
         _cfg.ShowUnusedModels  = CbShowUnused.IsChecked == true;
+        _cfg.ShowFable         = CbShowFable.IsChecked == true;
+        _cfg.ShowAccount       = CbShowAccount.IsChecked == true;
+        _cfg.ShowAccountEmail  = CbShowEmail.IsChecked == true;
 
         if (int.TryParse(TxtOtelPort.Text, out var port) && port is > 0 and < 65536)
             _cfg.OtelPort = port;
