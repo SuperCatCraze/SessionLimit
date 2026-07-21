@@ -37,11 +37,15 @@ jobs:
         shell: pwsh
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ github.event.inputs.tag }}' } else { '${{ github.ref_name }}' }
-          $expected = $tag.TrimStart('v')
-          $actual = (Get-Item publish/SessionLimit.exe).VersionInfo.FileVersion
+          $expected = [version]$tag.TrimStart('v')
+          $actual = [version](Get-Item publish/SessionLimit.exe).VersionInfo.FileVersion
           Write-Host "tag $tag -> expected $expected, binary reports $actual"
-          if ([version]$actual -ne [version]$expected) {
-            throw "Version mismatch: bump <Version> in SessionLimit.csproj to $expected"
+          # Compare major.minor.build only. FileVersion always carries a fourth field, so
+          # [version]'0.3.0.0' -ne [version]'0.3.0' (revision 0 vs -1) even though they match.
+          if ($actual.Major -ne $expected.Major -or
+              $actual.Minor -ne $expected.Minor -or
+              [Math]::Max($actual.Build, 0) -ne [Math]::Max($expected.Build, 0)) {
+            throw "Version mismatch: bump <Version> in SessionLimit.csproj to $($expected.ToString(3))"
           }
 
       - name: Checksum
