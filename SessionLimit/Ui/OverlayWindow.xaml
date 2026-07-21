@@ -1,0 +1,237 @@
+<Window x:Class="SessionLimit.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Session Limit"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        Topmost="True" ShowInTaskbar="False" ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight" Left="60" Top="60">
+
+  <Border Background="{StaticResource Bg}" BorderBrush="{StaticResource Stroke}"
+          BorderThickness="1" CornerRadius="10" Padding="12,10" Width="330">
+    <Border.Effect>
+      <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.5" Color="Black"/>
+    </Border.Effect>
+
+    <StackPanel>
+
+      <!-- ===== header ===== -->
+      <Grid x:Name="HeaderBar" Background="Transparent" Margin="0,0,0,10">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <Ellipse x:Name="LiveDot" Grid.Column="0" Width="7" Height="7" Margin="0,0,7,0"
+                 VerticalAlignment="Center" Fill="{StaticResource FgDim}"/>
+        <TextBlock Grid.Column="1" Text="SESSION LIMIT" Foreground="{StaticResource Fg}"
+                   FontFamily="Segoe UI" FontSize="10" FontWeight="Bold"
+                   VerticalAlignment="Center" Opacity="0.85"/>
+        <Button Grid.Column="2" Content="⚙" Style="{StaticResource IconBtn}"
+                Click="Gear_Click" ToolTip="Settings"/>
+        <Button Grid.Column="3" Content="✕" Style="{StaticResource IconBtn}"
+                Click="Close_Click" ToolTip="Close"/>
+      </Grid>
+
+      <ScrollViewer MaxHeight="760" VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled">
+        <StackPanel>
+
+          <!-- ===== session (5h) ===== -->
+          <Grid Margin="0,0,0,3">
+            <TextBlock x:Name="SessionLabel" Text="SESSION · 5h" Style="{StaticResource Lbl}"/>
+            <TextBlock x:Name="SessionReset" Text="" Style="{StaticResource Lbl}" HorizontalAlignment="Right"/>
+          </Grid>
+          <Border Background="{StaticResource TrackBg}" CornerRadius="3" Height="7" Margin="0,0,0,4">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SessionFill" Width="0*"/>
+                <ColumnDefinition x:Name="SessionRest" Width="100*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="SessionBar" Grid.Column="0" Background="{StaticResource Accent}" CornerRadius="3"/>
+            </Grid>
+          </Border>
+          <TextBlock x:Name="SessionDetail" Text="—" Style="{StaticResource Val}" Margin="0,0,0,6"
+                     ToolTip="Cost is notional API list-price value, not money billed on a subscription plan."/>
+
+          <!-- ===== token breakdown ===== -->
+          <Grid x:Name="BreakdownSection" Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Grid.Column="0" x:Name="StatIn"       Style="{StaticResource Val}" Margin="0,1"/>
+            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="StatOut"      Style="{StaticResource Val}" Margin="0,1"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" x:Name="StatCacheR"   Style="{StaticResource Val}" Margin="0,1"/>
+            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="StatCacheW"   Style="{StaticResource Val}" Margin="0,1"/>
+          </Grid>
+
+          <!-- ===== burn rate / projection ===== -->
+          <StackPanel x:Name="RatesSection" Margin="0,0,0,10">
+            <TextBlock x:Name="RateLine"    Style="{StaticResource Val}" Foreground="{StaticResource FgDim}" Margin="0,1"/>
+            <TextBlock x:Name="ProjectLine" Style="{StaticResource Val}" Margin="0,1"/>
+          </StackPanel>
+
+          <!-- ===== week (7d) ===== -->
+          <StackPanel x:Name="WeekSection">
+            <Grid Margin="0,0,0,3">
+              <TextBlock x:Name="WeekLabel" Text="WEEK · 7d rolling" Style="{StaticResource Lbl}"/>
+              <TextBlock x:Name="WeekPct" Text="" Style="{StaticResource Lbl}" HorizontalAlignment="Right"/>
+            </Grid>
+            <Border Background="{StaticResource TrackBg}" CornerRadius="3" Height="7" Margin="0,0,0,4">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition x:Name="WeekFill" Width="0*"/>
+                  <ColumnDefinition x:Name="WeekRest" Width="100*"/>
+                </Grid.ColumnDefinitions>
+                <Border x:Name="WeekBar" Grid.Column="0" Background="{StaticResource Accent}" CornerRadius="3"/>
+              </Grid>
+            </Border>
+            <TextBlock x:Name="WeekDetail" Text="—" Style="{StaticResource Val}" Margin="0,0,0,10"
+                       ToolTip="Cost is notional API list-price value, not money billed on a subscription plan."/>
+          </StackPanel>
+
+          <!-- ===== per-model ===== -->
+          <StackPanel x:Name="ModelSection">
+            <Border Height="1" Background="{StaticResource Stroke}" Margin="0,0,0,8"/>
+            <TextBlock x:Name="ModelHeader" Text="BY MODEL · this session"
+                       Style="{StaticResource Lbl}" Margin="0,0,0,5"/>
+            <StackPanel x:Name="ModelList"/>
+          </StackPanel>
+
+          <!-- ===== per-project ===== -->
+          <StackPanel x:Name="ProjectSection">
+            <Border Height="1" Background="{StaticResource Stroke}" Margin="0,9,0,8"/>
+            <TextBlock Text="BY PROJECT · this session" Style="{StaticResource Lbl}" Margin="0,0,0,5"/>
+            <StackPanel x:Name="ProjectList"/>
+          </StackPanel>
+
+          <!-- ===== sources ===== -->
+          <StackPanel x:Name="SourceSection">
+            <Border Height="1" Background="{StaticResource Stroke}" Margin="0,9,0,8"/>
+            <StackPanel x:Name="SourceList"/>
+          </StackPanel>
+
+          <!-- ===== settings ===== -->
+          <StackPanel x:Name="ConfigPanel" Visibility="Collapsed" Margin="0,10,0,0">
+            <Border Height="1" Background="{StaticResource Stroke}" Margin="0,0,0,9"/>
+
+            <TextBlock Text="DISPLAY" Style="{StaticResource Lbl}" Margin="0,0,0,4"/>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <CheckBox x:Name="CbShowWeekly"    Content="Weekly bar"/>
+                <CheckBox x:Name="CbShowBreakdown" Content="Token split"/>
+                <CheckBox x:Name="CbShowRates"     Content="Burn rate"/>
+                <CheckBox x:Name="CbShowCost"      Content="Cost"/>
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <CheckBox x:Name="CbShowModels"   Content="By model"/>
+                <CheckBox x:Name="CbShowProjects" Content="By project"/>
+                <CheckBox x:Name="CbShowSources"  Content="Sources"/>
+                <CheckBox x:Name="CbShowUnused"   Content="Unused models"/>
+                <CheckBox x:Name="CbCompact"      Content="Compact"/>
+              </StackPanel>
+            </Grid>
+
+            <TextBlock Text="DATA SOURCES" Style="{StaticResource Lbl}" Margin="0,10,0,4"/>
+            <CheckBox x:Name="CbTranscripts" Content="Claude Code transcripts (token ledger)"/>
+            <CheckBox x:Name="CbOtel"        Content="OpenTelemetry receiver"/>
+            <CheckBox x:Name="CbUsageCmd"    Content="claude /usage — real plan % (experimental)"/>
+            <CheckBox x:Name="CbAdminApi"    Content="Anthropic Admin API (org billing)"/>
+
+            <Grid Margin="0,6,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="OTEL port" Style="{StaticResource Lbl}"
+                         VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <TextBox Grid.Column="1" x:Name="TxtOtelPort" Width="70" HorizontalAlignment="Left"/>
+            </Grid>
+
+            <Grid Margin="0,4,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="Admin key" Style="{StaticResource Lbl}"
+                         VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <PasswordBox Grid.Column="1" x:Name="TxtAdminKey" Background="#FF23282C"
+                           Foreground="{StaticResource Fg}" BorderBrush="{StaticResource Stroke}"
+                           BorderThickness="1" FontFamily="Consolas" FontSize="11" Padding="4,2"/>
+            </Grid>
+
+            <TextBlock Text="BUDGETS (used when real plan % is unavailable)"
+                       Style="{StaticResource Lbl}" Margin="0,10,0,4" TextWrapping="Wrap"/>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <TextBlock Text="session tokens" Style="{StaticResource Lbl}"/>
+                <TextBox x:Name="TxtSessionBudget"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Text="weekly tokens" Style="{StaticResource Lbl}"/>
+                <TextBox x:Name="TxtWeeklyBudget"/>
+              </StackPanel>
+            </Grid>
+
+            <TextBlock Text="NOTIFY AT %" Style="{StaticResource Lbl}" Margin="0,10,0,4"/>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel Grid.Column="0">
+                <TextBlock Text="session" Style="{StaticResource Lbl}"/>
+                <TextBox x:Name="TxtSessionThresholds"/>
+              </StackPanel>
+              <StackPanel Grid.Column="2">
+                <TextBlock Text="weekly" Style="{StaticResource Lbl}"/>
+                <TextBox x:Name="TxtWeeklyThresholds"/>
+              </StackPanel>
+            </Grid>
+
+            <CheckBox x:Name="CbNotify" Content="Notifications enabled" Margin="0,8,0,0"/>
+            <CheckBox x:Name="CbSound"  Content="Play sound"/>
+            <CheckBox x:Name="CbTop"    Content="Always on top"/>
+
+            <Grid Margin="0,8,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock Grid.Column="0" Text="Opacity" Style="{StaticResource Lbl}"
+                         VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <Slider Grid.Column="1" x:Name="SldOpacity" Minimum="0.35" Maximum="1"
+                      SmallChange="0.05" VerticalAlignment="Center"/>
+            </Grid>
+
+            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+              <Button Content="Apply" Style="{StaticResource FlatBtn}" Click="Apply_Click" Margin="0,0,6,0"/>
+              <Button Content="Refresh now" Style="{StaticResource FlatBtn}" Click="Refresh_Click" Margin="0,0,6,0"/>
+              <Button Content="Log" Style="{StaticResource FlatBtn}" Click="OpenLog_Click"/>
+            </StackPanel>
+
+            <TextBlock x:Name="ConfigHint" Style="{StaticResource Lbl}" TextWrapping="Wrap"
+                       Margin="0,8,0,0" Text=""/>
+          </StackPanel>
+
+        </StackPanel>
+      </ScrollViewer>
+
+    </StackPanel>
+  </Border>
+</Window>
