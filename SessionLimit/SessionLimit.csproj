@@ -8,7 +8,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>SessionLimit</AssemblyName>
     <RootNamespace>SessionLimit</RootNamespace>
-    <Version>0.1.0</Version>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+
+    <Version>0.2.0</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <FileVersion>0.2.0.0</FileVersion>
+    <Product>Session Limit</Product>
+    <AssemblyTitle>Session Limit</AssemblyTitle>
+    <Company>SuperCatCraze</Company>
+    <Authors>SuperCatCraze</Authors>
+    <Copyright>Copyright © 2026 SuperCatCraze</Copyright>
+    <Description>Live Claude usage overlay: session and weekly limits, burn rate, and threshold alerts.</Description>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- Desktop widget: favour a small, steady working set over throughput. -->
     <ServerGarbageCollection>false</ServerGarbageCollection>

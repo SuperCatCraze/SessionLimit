@@ -204,9 +204,10 @@
               </StackPanel>
             </Grid>
 
-            <CheckBox x:Name="CbNotify" Content="Notifications enabled" Margin="0,8,0,0"/>
-            <CheckBox x:Name="CbSound"  Content="Play sound"/>
-            <CheckBox x:Name="CbTop"    Content="Always on top"/>
+            <CheckBox x:Name="CbNotify"  Content="Notifications enabled" Margin="0,8,0,0"/>
+            <CheckBox x:Name="CbSound"   Content="Play sound"/>
+            <CheckBox x:Name="CbTop"     Content="Always on top"/>
+            <CheckBox x:Name="CbStartup" Content="Start with Windows"/>
 
             <Grid Margin="0,8,0,0">
               <Grid.ColumnDefinitions>

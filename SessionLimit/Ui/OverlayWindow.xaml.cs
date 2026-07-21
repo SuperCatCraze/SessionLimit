@@ -54,6 +54,9 @@ public partial class OverlayWindow : Window
         };
         _tick.Start();
 
+        // If the app was moved or reinstalled, repoint the launch-on-login entry.
+        StartupManager.RefreshIfStale();
+
         StartCollectors();
         Render();
     }
@@ -452,6 +455,9 @@ public partial class OverlayWindow : Window
         CbNotify.IsChecked      = _cfg.NotificationsEnabled;
         CbSound.IsChecked       = _cfg.NotificationSound;
         CbTop.IsChecked         = _cfg.AlwaysOnTop;
+        // Read the live registry state rather than a cached setting, so the box always
+        // reflects what Windows will actually do.
+        CbStartup.IsChecked     = StartupManager.IsEnabled();
 
         CbCompact.IsChecked     = _cfg.Compact;
         CbShowWeekly.IsChecked    = _cfg.ShowWeekly;
@@ -488,6 +494,7 @@ public partial class OverlayWindow : Window
         _cfg.NotificationsEnabled = CbNotify.IsChecked == true;
         _cfg.NotificationSound    = CbSound.IsChecked == true;
         _cfg.AlwaysOnTop          = CbTop.IsChecked == true;
+        StartupManager.Set(CbStartup.IsChecked == true);
 
         _cfg.Compact           = CbCompact.IsChecked == true;
         _cfg.ShowWeekly        = CbShowWeekly.IsChecked == true;

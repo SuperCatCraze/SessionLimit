@@ -140,6 +140,28 @@ you start up already past several thresholds, only the highest is announced.
 
 ---
 
+## Install
+
+Build a self-contained executable — no .NET runtime needed on the target machine:
+
+```sh
+dotnet publish SessionLimit/SessionLimit.csproj -c Release -r win-x64 `
+  --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true `
+  -o publish
+```
+
+Then run `install.ps1`, which copies the executable to
+`%LOCALAPPDATA%\Programs\SessionLimit`, adds Start Menu and desktop shortcuts, and
+registers it to launch on login:
+
+```sh
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+Everything is per-user — no administrator rights at any point. Launch-on-login uses the
+`HKCU` Run key, so it appears in Task Manager's Startup tab and can be disabled there,
+from the app's own **Start with Windows** setting, or with `install.ps1 -Uninstall`.
+
 ## Build
 
 ```sh
