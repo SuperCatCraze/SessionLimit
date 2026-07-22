@@ -74,13 +74,32 @@ defensively: one bad line is skipped, never fatal.
 ### 2. `claude /usage` (default: on)
 
 The only route to Anthropic's **real** session and weekly percentages. Shells out to the
-CLI and parses the percentage bars out of its output.
+CLI and parses the limit lines out of its output.
 
 Experimental by nature — it parses human-facing CLI output, so a Claude Code release could
-break it. Failure is soft: the source goes red and the overlay falls back to budget mode.
+break it. Failure is soft: the source goes red and the overlay says on the bar itself what
+went wrong (`not signed in — see ⚙`) rather than quietly showing budget numbers.
 
-The binary is auto-discovered (including the one bundled in the VS Code extension); set
-`ClaudeExePath` in config to override.
+**Connecting it** — there is no login in Session Limit and no credentials are entered
+anywhere. It asks *your* Claude Code, which is already signed in, so setup is:
+
+1. Install [Claude Code](https://claude.com/product/claude-code).
+2. Sign in once, so that typing `claude` in a terminal works. **⚙ → Sign in** opens a
+   terminal at `claude /login` if you'd rather do it from here.
+3. Press **⚙ → Test**. It reports exactly what it found, or what to fix.
+
+The binary is auto-discovered from `PATH`, `~/.local/bin`, `~/.claude/local`, the npm
+global directory, `%LOCALAPPDATA%\Programs\claude`, and the extension bundled with VS Code,
+VS Code Insiders, Cursor, Windsurf or VSCodium. If yours lives somewhere else, **Find…**
+points at it directly (`.cmd` and `.bat` shims work too).
+
+#### It does not fill your history with "/usage" chats
+
+Each check runs with `--no-session-persistence`. Without that flag every poll saves a
+conversation, and a day of ten-minute checks leaves dozens of one-line `/usage` chats in
+your Claude Code history — versions before 0.5.0 did exactly that. **⚙ → Clear /usage
+chats** removes the ones already on disk; it only deletes transcripts that contain the
+`/usage` command *and no assistant message at all*, so no real conversation can match.
 
 ### 3. OpenTelemetry (default: off)
 

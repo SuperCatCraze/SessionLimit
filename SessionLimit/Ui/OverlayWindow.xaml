@@ -180,6 +180,26 @@
             <TextBlock x:Name="AccountHint" Style="{StaticResource Lbl}" TextWrapping="Wrap"
                        Margin="0,3,0,0" Text=""/>
 
+            <TextBlock Text="CLAUDE CODE" Style="{StaticResource Lbl}" Margin="0,10,0,4"/>
+            <TextBlock x:Name="ClaudeStatus" Style="{StaticResource Lbl}" TextWrapping="Wrap"
+                       Margin="0,0,0,4" Text=""/>
+            <TextBox x:Name="TxtClaudePath" Margin="0,0,0,4"/>
+            <StackPanel Orientation="Horizontal">
+              <Button Content="Find…"   Style="{StaticResource FlatBtn}" Click="FindClaude_Click"  Margin="0,0,5,0"/>
+              <Button Content="Test"    Style="{StaticResource FlatBtn}" Click="TestClaude_Click"  Margin="0,0,5,0"/>
+              <Button Content="Sign in" Style="{StaticResource FlatBtn}" Click="SignIn_Click"      Margin="0,0,5,0"/>
+              <Button Content="Get Claude Code" Style="{StaticResource FlatBtn}" Click="GetClaude_Click"/>
+            </StackPanel>
+            <TextBlock x:Name="ClaudeSteps" Style="{StaticResource Lbl}" TextWrapping="Wrap"
+                       Margin="0,5,0,0" Text=""/>
+
+            <StackPanel Orientation="Horizontal" Margin="0,7,0,0">
+              <Button x:Name="BtnClearUsageChats" Content="Clear /usage chats"
+                      Style="{StaticResource FlatBtn}" Click="ClearUsageChats_Click"/>
+            </StackPanel>
+            <TextBlock x:Name="UsageChatsHint" Style="{StaticResource Lbl}" TextWrapping="Wrap"
+                       Margin="0,4,0,0" Text=""/>
+
             <TextBlock Text="DATA SOURCES" Style="{StaticResource Lbl}" Margin="0,10,0,4"/>
             <CheckBox x:Name="CbTranscripts" Content="Claude Code transcripts (token ledger)"/>
             <CheckBox x:Name="CbOtel"        Content="OpenTelemetry receiver"/>

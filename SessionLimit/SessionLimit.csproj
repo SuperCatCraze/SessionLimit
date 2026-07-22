@@ -10,11 +10,11 @@
     <RootNamespace>SessionLimit</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
 
-    <Version>0.4.0</Version>
-    <AssemblyVersion>0.4.0.0</AssemblyVersion>
-    <FileVersion>0.4.0.0</FileVersion>
+    <Version>0.5.0</Version>
+    <AssemblyVersion>0.5.0.0</AssemblyVersion>
+    <FileVersion>0.5.0.0</FileVersion>
     <!-- The updater parses this to decide whether a release is newer. -->
-    <InformationalVersion>0.4.0</InformationalVersion>
+    <InformationalVersion>0.5.0</InformationalVersion>
     <Product>Session Limit</Product>
     <AssemblyTitle>Session Limit</AssemblyTitle>
     <Company>SuperCatCraze</Company>

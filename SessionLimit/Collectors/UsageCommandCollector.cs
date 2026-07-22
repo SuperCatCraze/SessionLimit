@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -71,7 +72,7 @@ public sealed class UsageCommandCollector : IDisposable
             var exe = _cfg.ResolveClaudeExe();
             if (string.IsNullOrEmpty(exe)) return;
 
-            var output = await RunAsync(exe, "-p \"/usage\"");
+            var output = await RunAsync(exe, UsageArgs);
             if (string.IsNullOrWhiteSpace(output))
             {
                 _status.Healthy = false;
@@ -80,6 +81,18 @@ public sealed class UsageCommandCollector : IDisposable
             }
 
             var clean = Ansi.Replace(output, "");
+
+            // Being signed out looks identical to a parse failure unless you check for it,
+            // and it is the one failure the user can actually do something about.
+            if (LooksSignedOut(clean))
+            {
+                _status.Healthy = false;
+                _status.Detail = "not signed in";
+                Plan.Raw = Trim(clean);
+                Log.Warn("usage-cmd: Claude Code reports no active login");
+                Updated?.Invoke();
+                return;
+            }
             var r = Parse(clean);
 
             if (r.Session is null && r.Weekly is null && r.Fable is null)
@@ -255,14 +268,78 @@ public sealed class UsageCommandCollector : IDisposable
         }
     }
 
+    /// <summary>
+    /// <c>--no-session-persistence</c> matters more than it looks: without it every poll
+    /// files a new saved conversation, and a day of ten-minute checks leaves a wall of
+    /// one-line "/usage" chats in the user's history that this app then reads back as usage.
+    /// </summary>
+    private const string UsageArgs = "-p \"/usage\" --no-session-persistence";
+
+    private static readonly string[] SignedOutMarkers =
+    {
+        "/login", "please log in", "not logged in", "no active session",
+        "authentication", "sign in to", "invalid api key", "unauthorized"
+    };
+
+    private static bool LooksSignedOut(string text)
+    {
+        var lower = text.ToLowerInvariant();
+        // Only when there is nothing usable in it — the real output can mention these words.
+        if (SessionLine.IsMatch(text) || WeekLine.IsMatch(text)) return false;
+        return SignedOutMarkers.Any(m => lower.Contains(m));
+    }
+
+    /// <summary>
+    /// One-shot check for the settings panel: says plainly what happened, in the words
+    /// someone fixing their own install needs.
+    /// </summary>
+    public static async Task<string> DiagnoseAsync(AppConfig cfg)
+    {
+        var exe = cfg.ResolveClaudeExe(out var searched);
+        if (string.IsNullOrEmpty(exe))
+            return "Claude Code not found. Install it, or use Find… to point at claude.exe.\n" +
+                   "Looked in: " + string.Join("; ", searched.Take(4)) + " …";
+
+        try
+        {
+            var raw = await RunAsync(exe, UsageArgs);
+            if (string.IsNullOrWhiteSpace(raw))
+                return $"Found {Path.GetFileName(exe)} but it returned nothing. " +
+                       "Run `claude` in a terminal once — a first run may need you to sign in or approve the folder.";
+
+            var clean = Ansi.Replace(raw, "");
+            if (LooksSignedOut(clean))
+                return "Claude Code is installed but not signed in. Press Sign in, then run /login.";
+
+            var r = Parse(clean);
+            if (r.Session is null && r.Weekly is null && r.Fable is null)
+                return "Connected, but the /usage wording has changed and no percentages were found. " +
+                       "Update Session Limit, or report it.";
+
+            return $"Connected. Session {r.Session:0}% · week {r.Weekly:0}%" +
+                   (r.Fable is { } f ? $" · Fable {f:0}%" : "") + $"\nUsing {exe}";
+        }
+        catch (Exception ex)
+        {
+            Log.Error("usage-cmd: diagnose failed", ex);
+            return $"Could not run {exe}: {ex.Message}";
+        }
+    }
+
     private static async Task<string> RunAsync(string exe, string args)
     {
+        // A .cmd/.bat shim (how npm installs it) is not a PE image, so it cannot be started
+        // directly with UseShellExecute off — it has to go through the command processor.
+        var isShim = exe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
+                     exe.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+
         var psi = new ProcessStartInfo
         {
-            FileName = exe,
-            Arguments = args,
+            FileName = isShim ? Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe" : exe,
+            Arguments = isShim ? $"/c \"\"{exe}\" {args}\"" : args,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,   // never let a prompt block on the parent's console
             UseShellExecute = false,
             CreateNoWindow = true,
             StandardOutputEncoding = Encoding.UTF8,
@@ -270,6 +347,10 @@ public sealed class UsageCommandCollector : IDisposable
 
         using var proc = Process.Start(psi);
         if (proc is null) return "";
+
+        // Close stdin immediately: anything waiting for input gets EOF and exits rather
+        // than hanging until the timeout.
+        try { proc.StandardInput.Close(); } catch { /* already gone */ }
 
         var stdout = proc.StandardOutput.ReadToEndAsync();
         var stderr = proc.StandardError.ReadToEndAsync();

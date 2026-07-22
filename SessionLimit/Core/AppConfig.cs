@@ -99,25 +99,65 @@ public sealed class AppConfig
         catch (Exception ex) { Log.Error("config save failed", ex); }
     }
 
-    /// <summary>Finds the bundled Claude Code binary, preferring the newest extension version.</summary>
-    public string ResolveClaudeExe()
+    public string ResolveClaudeExe() => ResolveClaudeExe(out _);
+
+    /// <summary>
+    /// Finds the Claude Code binary. There is no single canonical install location — it
+    /// ships via npm, a native installer, and bundled inside several editor extensions —
+    /// so this checks all of them and reports where it looked, because "not found" is
+    /// useless to someone who has it installed somewhere unexpected.
+    /// </summary>
+    public string ResolveClaudeExe(out List<string> searched)
     {
-        if (!string.IsNullOrWhiteSpace(ClaudeExePath) && File.Exists(ClaudeExePath))
-            return ClaudeExePath;
+        searched = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(ClaudeExePath))
+        {
+            searched.Add($"configured: {ClaudeExePath}");
+            if (File.Exists(ClaudeExePath)) return ClaudeExePath;
+        }
 
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        // PATH first: a normal `npm i -g` or installer puts it there, and it is what the
+        // user gets when they type `claude` themselves.
+        searched.Add("PATH");
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "")
+                            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var name in new[] { "claude.exe", "claude.cmd", "claude.bat" })
+            {
+                try
+                {
+                    var candidate = Path.Combine(dir.Trim(), name);
+                    if (File.Exists(candidate)) return candidate;
+                }
+                catch { /* malformed PATH entry */ }
+            }
+        }
+
         var direct = new[]
         {
             Path.Combine(home, ".local", "bin", "claude.exe"),
+            Path.Combine(home, ".local", "bin", "claude.cmd"),
             Path.Combine(home, ".claude", "local", "claude.exe"),
+            Path.Combine(appData, "npm", "claude.cmd"),
+            Path.Combine(localApp, "Programs", "claude", "claude.exe"),
         };
         foreach (var p in direct)
-            if (File.Exists(p)) return p;
-
-        // VS Code extension ships a native binary; pick the highest version folder.
-        foreach (var extRoot in new[] { Path.Combine(home, ".vscode", "extensions"),
-                                        Path.Combine(home, ".vscode-insiders", "extensions") })
         {
+            searched.Add(p);
+            if (File.Exists(p)) return p;
+        }
+
+        // Editor extensions bundle a native binary; take the highest version present.
+        foreach (var editor in new[] { ".vscode", ".vscode-insiders", ".vscode-server",
+                                       ".cursor", ".windsurf", ".vscodium" })
+        {
+            var extRoot = Path.Combine(home, editor, "extensions");
+            searched.Add(extRoot);
             if (!Directory.Exists(extRoot)) continue;
             try
             {

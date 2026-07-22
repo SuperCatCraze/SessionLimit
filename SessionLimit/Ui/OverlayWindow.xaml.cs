@@ -30,6 +30,7 @@ public partial class OverlayWindow : Window
     private AdminApiCollector? _adminApi;
 
     private readonly AccountWatcher _account = new();
+    private List<string>? _usageChats;
 
     private UpdateInfo? _update;
     private bool _updateBusy;
@@ -179,12 +180,21 @@ public partial class OverlayWindow : Window
 
             var isReal = sessionIsPlan || weekIsPlan;
 
+            // When there is no plan reading, say *why* on the label itself. Silently showing
+            // budget numbers is how the overlay ends up contradicting the Claude app.
+            var why = !_cfg.EnableUsageCmd ? "budget"
+                    : waiting ? "reading…"
+                    : _stUsageCmd.Detail is "claude.exe not found" ? "no Claude Code — see ⚙"
+                    : _stUsageCmd.Detail is "not signed in" ? "not signed in — see ⚙"
+                    : !_stUsageCmd.Healthy ? "budget · /usage failed"
+                    : "budget";
+
             SessionLabel.Text = sessionIsPlan
                 ? (stale ? "SESSION · 5h · plan (stale)" : "SESSION · 5h · plan")
-                : waiting ? "SESSION · 5h · reading…" : "SESSION · 5h · budget";
+                : $"SESSION · 5h · {why}";
             WeekLabel.Text = weekIsPlan
                 ? (stale ? "WEEK · plan (stale)" : "WEEK · plan")
-                : waiting ? "WEEK · reading…" : "WEEK · 7d rolling · budget";
+                : $"WEEK · {why}";
 
             SetBar(SessionFill, SessionRest, SessionBar, sessionPct);
             SetBar(WeekFill, WeekRest, WeekBar, weekPct);
@@ -593,12 +603,21 @@ public partial class OverlayWindow : Window
         TxtWeeklyThresholds.Text  = string.Join(",", _cfg.WeeklyThresholds);
         SldOpacity.Value          = _cfg.Opacity;
 
-        var exe = _cfg.ResolveClaudeExe();
-        ConfigHint.Text = string.IsNullOrEmpty(exe)
-            ? "claude.exe not found — real plan % unavailable."
-            : $"OTEL setup: set CLAUDE_CODE_ENABLE_TELEMETRY=1, " +
-              $"OTEL_METRICS_EXPORTER=otlp, OTEL_EXPORTER_OTLP_PROTOCOL=http/json, " +
-              $"OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:{_cfg.OtelPort}";
+        RefreshClaudeStatus();
+
+        ConfigHint.Text = "OTEL setup: set CLAUDE_CODE_ENABLE_TELEMETRY=1, " +
+                          "OTEL_METRICS_EXPORTER=otlp, OTEL_EXPORTER_OTLP_PROTOCOL=http/json, " +
+                          $"OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:{_cfg.OtelPort}";
+
+        // Walks the whole transcript tree, so keep it off the UI thread.
+        if (_usageChats is null)
+        {
+            Task.Run(UsageChats.Find).ContinueWith(t =>
+            {
+                _usageChats = t.Result;
+                Dispatcher.BeginInvoke(() => RefreshClaudeStatus());
+            }, TaskScheduler.Default);
+        }
     }
 
     private void Apply_Click(object sender, RoutedEventArgs e)
@@ -787,6 +806,133 @@ public partial class OverlayWindow : Window
         UpdateHint.Text = _update is { } u
             ? $"{u.Display} is available — {Updater.RepoUrl}/releases"
             : $"{Updater.Display} · {last} · {Updater.RepoUrl}";
+    }
+
+    // ==================================================================
+    //  Claude Code setup
+    // ==================================================================
+    private void RefreshClaudeStatus(string? testResult = null)
+    {
+        var exe = _cfg.ResolveClaudeExe(out _);
+        TxtClaudePath.Text = _cfg.ClaudeExePath;
+
+        if (testResult is not null)
+        {
+            ClaudeStatus.Text = testResult;
+            ClaudeStatus.Foreground = Brush(testResult.StartsWith("Connected") ? "Accent" : "Warn");
+        }
+        else if (string.IsNullOrEmpty(exe))
+        {
+            ClaudeStatus.Text = "Not found — real plan percentages are unavailable.";
+            ClaudeStatus.Foreground = Brush("Warn");
+        }
+        else
+        {
+            ClaudeStatus.Text = $"Found: {exe}";
+            ClaudeStatus.Foreground = Brush("FgDim");
+        }
+
+        ClaudeSteps.Text =
+            "Session Limit reads your real percentages by asking your own Claude Code for them — " +
+            "there is nothing to log into here and no credentials are entered.\n" +
+            "1. Install Claude Code (Get Claude Code).\n" +
+            "2. Sign in once, so `claude` works in a terminal.\n" +
+            "3. Press Test. If it is installed somewhere unusual, use Find….";
+
+        var junk = _usageChats?.Count ?? 0;
+        BtnClearUsageChats.Content = junk > 0 ? $"Clear {junk} /usage chats" : "Clear /usage chats";
+        BtnClearUsageChats.IsEnabled = junk > 0;
+        UsageChatsHint.Text = junk > 0
+            ? $"{junk} saved conversation(s) left by older builds checking your usage. " +
+              "Current builds no longer create them."
+            : "No leftover /usage conversations.";
+    }
+
+    private void FindClaude_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Locate claude.exe",
+            Filter = "Claude Code (claude.exe;claude.cmd;claude.bat)|claude.exe;claude.cmd;claude.bat|All files (*.*)|*.*",
+            CheckFileExists = true
+        };
+        if (dlg.ShowDialog(this) != true) return;
+
+        _cfg.ClaudeExePath = dlg.FileName;
+        _cfg.Save();
+        RefreshClaudeStatus();
+        StartCollectors();
+    }
+
+    private async void TestClaude_Click(object sender, RoutedEventArgs e)
+    {
+        // Take the typed path first, so Test checks what is on screen rather than what was saved.
+        var typed = TxtClaudePath.Text.Trim();
+        if (typed != _cfg.ClaudeExePath)
+        {
+            _cfg.ClaudeExePath = typed;
+            _cfg.Save();
+        }
+
+        ClaudeStatus.Text = "testing…";
+        ClaudeStatus.Foreground = Brush("FgDim");
+        var result = await UsageCommandCollector.DiagnoseAsync(_cfg);
+        RefreshClaudeStatus(result);
+
+        if (result.StartsWith("Connected")) StartCollectors();
+    }
+
+    /// <summary>Opens a terminal running Claude Code, which is where signing in happens.</summary>
+    private void SignIn_Click(object sender, RoutedEventArgs e)
+    {
+        var exe = _cfg.ResolveClaudeExe(out _);
+        if (string.IsNullOrEmpty(exe))
+        {
+            RefreshClaudeStatus("Install Claude Code first, then sign in.");
+            return;
+        }
+        try
+        {
+            // /k keeps the window open so the login prompt is usable and its output readable.
+            Process.Start(new ProcessStartInfo("cmd.exe", $"/k \"\"{exe}\" /login\"")
+            { UseShellExecute = true });
+            RefreshClaudeStatus("A terminal opened — sign in there, then press Test.");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("sign-in launch failed", ex);
+            RefreshClaudeStatus("Could not open a terminal. Run `claude /login` yourself, then press Test.");
+        }
+    }
+
+    private void GetClaude_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://claude.com/product/claude-code")
+            { UseShellExecute = true });
+        }
+        catch (Exception ex) { Log.Error("open claude code page failed", ex); }
+    }
+
+    private void ClearUsageChats_Click(object sender, RoutedEventArgs e)
+    {
+        var files = _usageChats ?? new List<string>();
+        if (files.Count == 0) return;
+
+        // Deleting files out of someone's Claude Code history warrants asking, even when
+        // this app is what created them.
+        var answer = MessageBox.Show(this,
+            $"Delete {files.Count} saved \"/usage\" conversation(s)?\n\n" +
+            "These were left behind by older versions of Session Limit checking your usage. " +
+            "Each contains only the /usage command and no replies. Real conversations are not touched.",
+            "Clear /usage chats", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.OK) return;
+
+        var (deleted, bytes) = UsageChats.Delete(files);
+        _usageChats = UsageChats.Find();
+        RefreshClaudeStatus();
+        UsageChatsHint.Text = $"Removed {deleted} conversation(s), {bytes / 1024} KB.";
     }
 
     private void Watermark_Click(object sender, MouseButtonEventArgs e)
