@@ -88,10 +88,21 @@ anywhere. It asks *your* Claude Code, which is already signed in, so setup is:
    terminal at `claude /login` if you'd rather do it from here.
 3. Press **⚙ → Test**. It reports exactly what it found, or what to fix.
 
-The binary is auto-discovered from `PATH`, `~/.local/bin`, `~/.claude/local`, the npm
-global directory, `%LOCALAPPDATA%\Programs\claude`, and the extension bundled with VS Code,
-VS Code Insiders, Cursor, Windsurf or VSCodium. If yours lives somewhere else, **Find…**
-points at it directly (`.cmd` and `.bat` shims work too).
+Discovery covers `PATH` (read from the registry as well as this process, so an install done
+after login is still found), `~/.local/bin`, `~/.claude/bin`, the npm/pnpm/bun/Volta global
+directories, `%LOCALAPPDATA%\Programs\*`, the App Paths and uninstall entries in the
+registry, and **every editor extension directory in your profile**.
+
+That last one is deliberately not a list of editor names. Editors keep extensions in a
+dot-directory — `.vscode`, `.cursor`, `.windsurf` — and enumerating them found a
+`.antigravity` on the development machine that no hand-written list would have contained.
+Versions are compared numerically, because sorting them as text picks `2.1.96` over
+`2.1.217`.
+
+If it still isn't found, **Search my PC** does a wider, time-boxed sweep, and **Find…**
+points at it directly (`.cmd` and `.bat` shims work — they run through the command
+processor). When Claude Code has clearly run on the machine but no binary turns up, the
+panel says so rather than telling you to install something you already have.
 
 #### It does not fill your history with "/usage" chats
 

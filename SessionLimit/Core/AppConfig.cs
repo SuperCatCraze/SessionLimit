@@ -99,77 +99,13 @@ public sealed class AppConfig
         catch (Exception ex) { Log.Error("config save failed", ex); }
     }
 
-    public string ResolveClaudeExe() => ResolveClaudeExe(out _);
+    public string ResolveClaudeExe() => ClaudeLocator.Resolve(this);
 
-    /// <summary>
-    /// Finds the Claude Code binary. There is no single canonical install location — it
-    /// ships via npm, a native installer, and bundled inside several editor extensions —
-    /// so this checks all of them and reports where it looked, because "not found" is
-    /// useless to someone who has it installed somewhere unexpected.
-    /// </summary>
+    /// <summary>Where discovery looked, for the settings panel.</summary>
     public string ResolveClaudeExe(out List<string> searched)
     {
-        searched = new List<string>();
-
-        if (!string.IsNullOrWhiteSpace(ClaudeExePath))
-        {
-            searched.Add($"configured: {ClaudeExePath}");
-            if (File.Exists(ClaudeExePath)) return ClaudeExePath;
-        }
-
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-
-        // PATH first: a normal `npm i -g` or installer puts it there, and it is what the
-        // user gets when they type `claude` themselves.
-        searched.Add("PATH");
-        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "")
-                            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            foreach (var name in new[] { "claude.exe", "claude.cmd", "claude.bat" })
-            {
-                try
-                {
-                    var candidate = Path.Combine(dir.Trim(), name);
-                    if (File.Exists(candidate)) return candidate;
-                }
-                catch { /* malformed PATH entry */ }
-            }
-        }
-
-        var direct = new[]
-        {
-            Path.Combine(home, ".local", "bin", "claude.exe"),
-            Path.Combine(home, ".local", "bin", "claude.cmd"),
-            Path.Combine(home, ".claude", "local", "claude.exe"),
-            Path.Combine(appData, "npm", "claude.cmd"),
-            Path.Combine(localApp, "Programs", "claude", "claude.exe"),
-        };
-        foreach (var p in direct)
-        {
-            searched.Add(p);
-            if (File.Exists(p)) return p;
-        }
-
-        // Editor extensions bundle a native binary; take the highest version present.
-        foreach (var editor in new[] { ".vscode", ".vscode-insiders", ".vscode-server",
-                                       ".cursor", ".windsurf", ".vscodium" })
-        {
-            var extRoot = Path.Combine(home, editor, "extensions");
-            searched.Add(extRoot);
-            if (!Directory.Exists(extRoot)) continue;
-            try
-            {
-                var best = Directory.GetDirectories(extRoot, "anthropic.claude-code-*")
-                    .Select(d => new { Dir = d, Exe = Path.Combine(d, "resources", "native-binary", "claude.exe") })
-                    .Where(x => File.Exists(x.Exe))
-                    .OrderByDescending(x => x.Dir, StringComparer.OrdinalIgnoreCase)
-                    .FirstOrDefault();
-                if (best != null) return best.Exe;
-            }
-            catch (Exception ex) { Log.Error("claude.exe discovery failed", ex); }
-        }
-        return "";
+        var exe = ClaudeLocator.Resolve(this, force: true);
+        searched = ClaudeLocator.LastSearched.ToList();
+        return exe;
     }
 }

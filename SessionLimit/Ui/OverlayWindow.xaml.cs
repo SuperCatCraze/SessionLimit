@@ -813,7 +813,8 @@ public partial class OverlayWindow : Window
     // ==================================================================
     private void RefreshClaudeStatus(string? testResult = null)
     {
-        var exe = _cfg.ResolveClaudeExe(out _);
+        // Cached deliberately: a forced re-probe here would run on every settings repaint.
+        var exe = ClaudeLocator.Resolve(_cfg);
         TxtClaudePath.Text = _cfg.ClaudeExePath;
 
         if (testResult is not null)
@@ -823,7 +824,13 @@ public partial class OverlayWindow : Window
         }
         else if (string.IsNullOrEmpty(exe))
         {
-            ClaudeStatus.Text = "Not found — real plan percentages are unavailable.";
+            // Transcripts prove Claude Code runs here, which turns "install it" (wrong and
+            // annoying) into "it is installed, I just cannot see where" (true and actionable).
+            var transcripts = ClaudeLocator.TranscriptCount();
+            ClaudeStatus.Text = transcripts > 0
+                ? $"Claude Code has run on this PC ({transcripts} transcripts) but its program file " +
+                  "wasn't found. Press Search my PC, or use Find… if you know where it is."
+                : "Not found — real plan percentages are unavailable.";
             ClaudeStatus.Foreground = Brush("Warn");
         }
         else
@@ -832,12 +839,15 @@ public partial class OverlayWindow : Window
             ClaudeStatus.Foreground = Brush("FgDim");
         }
 
-        ClaudeSteps.Text =
-            "Session Limit reads your real percentages by asking your own Claude Code for them — " +
-            "there is nothing to log into here and no credentials are entered.\n" +
-            "1. Install Claude Code (Get Claude Code).\n" +
-            "2. Sign in once, so `claude` works in a terminal.\n" +
-            "3. Press Test. If it is installed somewhere unusual, use Find….";
+        ClaudeSteps.Text = string.IsNullOrEmpty(exe)
+            ? "Nothing is logged into here — Session Limit asks your own Claude Code, which is " +
+              "already signed in. To find it yourself, open a terminal and run:\n" +
+              "    where claude\n" +
+              "then paste the path above and press Test. If that prints nothing, Claude Code " +
+              "isn't on PATH — Search my PC will look for it.\n" +
+              "Looked in: " + string.Join("; ", ClaudeLocator.LastSearched.Take(5)) + " …"
+            : "Nothing is logged into here — Session Limit asks your own Claude Code for the " +
+              "numbers, so it needs to be installed and signed in. Press Test to check.";
 
         var junk = _usageChats?.Count ?? 0;
         BtnClearUsageChats.Content = junk > 0 ? $"Clear {junk} /usage chats" : "Clear /usage chats";
@@ -846,6 +856,32 @@ public partial class OverlayWindow : Window
             ? $"{junk} saved conversation(s) left by older builds checking your usage. " +
               "Current builds no longer create them."
             : "No leftover /usage conversations.";
+    }
+
+    private async void SearchClaude_Click(object sender, RoutedEventArgs e)
+    {
+        BtnSearchPc.IsEnabled = false;
+        ClaudeStatus.Text = "searching… (up to 30s)";
+        ClaudeStatus.Foreground = Brush("FgDim");
+        try
+        {
+            var hit = await Task.Run(() => ClaudeLocator.DeepSearch(TimeSpan.FromSeconds(30)));
+            if (string.IsNullOrEmpty(hit))
+            {
+                RefreshClaudeStatus("Nothing found. Run `where claude` in a terminal and paste the " +
+                                    "path above — if that prints nothing either, Claude Code isn't " +
+                                    "installed for this Windows user (a WSL install won't be visible).");
+                return;
+            }
+
+            _cfg.ClaudeExePath = hit;
+            _cfg.Save();
+            ClaudeLocator.Invalidate();
+            var result = await UsageCommandCollector.DiagnoseAsync(_cfg);
+            RefreshClaudeStatus(result);
+            if (result.StartsWith("Connected")) StartCollectors();
+        }
+        finally { BtnSearchPc.IsEnabled = true; }
     }
 
     private void FindClaude_Click(object sender, RoutedEventArgs e)
@@ -860,6 +896,7 @@ public partial class OverlayWindow : Window
 
         _cfg.ClaudeExePath = dlg.FileName;
         _cfg.Save();
+        ClaudeLocator.Invalidate();
         RefreshClaudeStatus();
         StartCollectors();
     }
@@ -872,6 +909,7 @@ public partial class OverlayWindow : Window
         {
             _cfg.ClaudeExePath = typed;
             _cfg.Save();
+            ClaudeLocator.Invalidate();
         }
 
         ClaudeStatus.Text = "testing…";

@@ -185,8 +185,10 @@
                        Margin="0,0,0,4" Text=""/>
             <TextBox x:Name="TxtClaudePath" Margin="0,0,0,4"/>
             <StackPanel Orientation="Horizontal">
-              <Button Content="Find…"   Style="{StaticResource FlatBtn}" Click="FindClaude_Click"  Margin="0,0,5,0"/>
               <Button Content="Test"    Style="{StaticResource FlatBtn}" Click="TestClaude_Click"  Margin="0,0,5,0"/>
+              <Button x:Name="BtnSearchPc" Content="Search my PC" Style="{StaticResource FlatBtn}"
+                      Click="SearchClaude_Click" Margin="0,0,5,0"/>
+              <Button Content="Find…"   Style="{StaticResource FlatBtn}" Click="FindClaude_Click"  Margin="0,0,5,0"/>
               <Button Content="Sign in" Style="{StaticResource FlatBtn}" Click="SignIn_Click"      Margin="0,0,5,0"/>
               <Button Content="Get Claude Code" Style="{StaticResource FlatBtn}" Click="GetClaude_Click"/>
             </StackPanel>
